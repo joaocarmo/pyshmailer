@@ -1,0 +1,309 @@
+#!/usr/bin/env python3
+
+# Import modules
+import sys
+import os
+import re
+import yaml
+import socks
+import socket
+import smtplib
+import argparse
+from bs4 import BeautifulSoup
+from base64 import b64decode
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.image import MIMEImage
+
+# Parse the arguments
+parser = argparse.ArgumentParser(
+    description="Python Mailer for Shenanigans !",
+    prog="pyshmailer",
+)
+parser.add_argument(
+    "--version",
+    action="version",
+    version="%(prog)s 1.0",
+)
+parser.add_argument(
+    "-to",
+    "--mail-to",
+    nargs="?",
+    help="a list of e-mail addresses to send the message to 'email1,email2,...'",
+    required=True,
+)
+parser.add_argument(
+    "-cc",
+    "--cc-to",
+    nargs="?",
+    help="a list of e-mail addresses to send the message as cc to 'email1,email2,...'",
+)
+parser.add_argument(
+    "-bcc",
+    "--bcc-to",
+    nargs="?",
+    help="a list of e-mail addresses to send the message as bcc to 'email1,email2,...'",
+)
+parser.add_argument(
+    "-from",
+    "--mail-from",
+    nargs="?",
+    help="an e-mail or name to set the sender from",
+    required=True,
+)
+parser.add_argument(
+    "-s",
+    "--subject",
+    nargs="?",
+    help="a text message detailing the subject",
+    required=True,
+)
+parser.add_argument(
+    "-m",
+    "--message",
+    nargs="?",
+    help="an html file or text message to send",
+    required=True,
+)
+parser.add_argument(
+    "-i",
+    "--with-images",
+    action="store_true",
+    help="if the html message contains images, include them",
+)
+parser.add_argument(
+    "-c",
+    "--config",
+    type=argparse.FileType("r"),
+    default="config.yml",
+    nargs="?",
+    help="use a static YAML config file",
+)
+parser.add_argument(
+    "-p",
+    "--proxy",
+    nargs="?",
+    help="set the proxy to use as [server]:[port]",
+)
+parser.add_argument(
+    "--proxy-type",
+    nargs="?",
+    help="set the proxy type: http, socks4 or socks5",
+    default="socks5",
+)
+parser.add_argument(
+    "-v",
+    "--verbose",
+    action="store_true",
+    help="outputs information on every action",
+)
+parser.add_argument(
+    "-n",
+    "--dry-run",
+    action="store_true",
+    help="do not send any e-mail message",
+)
+parser.add_argument(
+    "-d",
+    "--debug",
+    action="store_true",
+    help="enable debug mode",
+)
+
+# Show the help message if no arguments are supplied
+if len(sys.argv) == 1:
+    parser.print_help(sys.stderr)
+    sys.exit(1)
+args = parser.parse_args()
+arg_to = args.mail_to
+arg_cc = args.cc_to
+arg_bcc = args.bcc_to
+arg_from = args.mail_from
+arg_subject = args.subject
+arg_message = args.message
+arg_images = args.with_images
+arg_config = args.config
+arg_proxy = args.proxy
+arg_proxy_type = args.proxy_type
+is_verbose = args.verbose
+is_dry_run = args.dry_run
+is_debug = args.debug
+
+# Settings
+config = {}
+proxy_server = ''
+proxy_port = 0
+proxy_type = socks.SOCKS5
+throughProxy = False
+mail_to = []
+mail_to_cc = []
+mail_to_bcc = []
+cnt_src = ''
+
+# Custom print function
+def puts(*args, **kwargs):
+    if is_verbose:
+        print(*args, **kwargs)
+
+# Parse the configuration file
+try:
+    config = yaml.safe_load(arg_config.read())
+except yaml.YAMLError as err:
+    sys.stderr.write("Error: there was a problem parsing the config file\n")
+    sys.exit(1)
+
+# Fix base 64 incorrect padding
+def fix_b64_padding(b64s):
+    return b64s + '=' * (-len(b64s) % 4)
+
+# Setup the mail server
+smtp_server_b64 = config.get('smtp_server', {}).get('base64')
+if not smtp_server_b64:
+    smtp_server = config.get('smtp_server', {}).get('plain')
+else:
+    smtp_server = b64decode(fix_b64_padding(smtp_server_b64)).decode('utf-8')
+smtp_user_b64 = config.get('smtp_user', {}).get('base64')
+if not smtp_user_b64:
+    smtp_user = config.get('smtp_user', {}).get('plain')
+else:
+    smtp_user = b64decode(fix_b64_padding(smtp_user_b64)).decode('utf-8')
+smtp_pass_b64 = config.get('smtp_pass', {}).get('base64')
+if not smtp_pass_b64:
+    smtp_pass = config.get('smtp_pass', {}).get('plain')
+else:
+    smtp_pass = b64decode(fix_b64_padding(smtp_pass_b64)).decode('utf-8')
+
+if not smtp_server or not smtp_user or not smtp_pass:
+    sys.stderr.write("Error: you need to specify the smtp server settings\n")
+    sys.exit(1)
+
+# Read proxy from config
+proxy_server = config.get('proxy', {}).get('host')
+proxy_port = config.get('proxy', {}).get('port')
+arg_proxy_type = config.get('proxy', {}).get('type')
+proxy_user = config.get('proxy', {}).get('user')
+
+# Use proxy from https://hidemyna.me/en/proxy-list/
+# Parse and validate the supplied proxy
+if type(arg_proxy) is str:
+    try:
+        proxy_parts = arg_proxy.split(':')
+        proxy_server = proxy_parts[0]
+        proxy_port = proxy_parts[1]
+    except IndexError:
+        sys.stderr.write('Error: proxy format is invalid\n')
+        sys.exit(1)
+if proxy_server and proxy_port and arg_proxy_type:
+    try:
+        proxy_port = int(proxy_port)
+        socket.inet_aton(proxy_server)
+    except ValueError:
+        sys.stderr.write('Error: proxy port is invalid\n')
+        sys.exit(1)
+    except socket.error:
+        sys.stderr.write("Error: the proxy '{}' is invalid\n".format(proxy_server))
+        sys.exit(1)
+    throughProxy = True
+
+# Set the proper proxy type
+if arg_proxy_type == 'socks4':
+    proxy_type = socks.SOCKS4
+elif arg_proxy_type == 'http':
+    proxy_type = socks.HTTP
+
+# Create an array of destinations
+mail_to = ', '.join([ to for to in arg_to.split(',') ])
+mail_to_cc = ', '.join([ to for to in arg_cc.split(',') ])
+mail_to_bcc = ', '.join([ to for to in arg_bcc.split(',') ])
+
+# Parse the e-mail message
+mail_message_text = ''
+mail_message_html = ''
+try:
+    cnt_src = os.path.dirname(os.path.abspath(arg_message))
+    with open(arg_message, 'r') as f:
+        mail_message_html = f.read()
+except FileNotFoundError:
+    mail_message_text = arg_message
+
+if not mail_message_html:
+    mail_message_html = '''
+<html>
+    <head></head>
+    <body>
+        <p>
+            {}
+        </p>
+    </body>
+</html>
+'''.format(mail_message_text)
+
+# Wrap the smtplib module
+if throughProxy:
+    puts('Using the proxy {}:{}'.format(proxy_server, proxy_port))
+    socks.setdefaultproxy(proxy_type, proxy_server, proxy_port)
+    socks.wrapmodule(smtplib)
+SMTP = smtplib.SMTP_SSL
+
+# Prepare the e-mail message
+msg = MIMEMultipart('alternative')
+msg['Subject'] = arg_subject
+msg['From'] = arg_from
+msg['To'] = mail_to
+msg['Cc'] = mail_to_cc
+msg['Bcc'] = mail_to_bcc
+
+# Set the proxy server
+if proxy_server and proxy_user:
+    msg.add_header('X-Rid', '{}@{}'.format(proxy_user, proxy_server))
+
+# Attach the images found
+if arg_images:
+    parsed_html = BeautifulSoup(mail_message_html, features='html5lib')
+    img_found = parsed_html.body.find_all('img')
+    img_cid = 0
+    puts("{} image(s) found".format(len(img_found)))
+    for img in img_found:
+        img_src = img.get('src')
+        img['src'] = 'cid:{}'.format(img_cid)
+        abs_src = os.path.abspath(os.path.join(cnt_src, img_src))
+        try:
+            fp = open(abs_src, 'rb')
+            img = MIMEImage(fp.read(), abs_src)
+            fp.close()
+            img.add_header('Content-ID', '<{}>'.format(img_cid))
+            img.add_header('Content-Disposition', 'in-line', filename=abs_src)
+            img.add_header('X-Attachment-Id', str(img_cid))
+            msg.attach(img)
+        except FileNotFoundError:
+            puts("Warning: {} doesn't exist !".format(abs_src))
+        img_cid = img_cid + 1
+    mail_message_html = parsed_html
+
+text_part = MIMEText(mail_message_text, 'plain')
+html_part = MIMEText(mail_message_html, 'html')
+msg.attach(text_part)
+msg.attach(html_part)
+
+# Send the message
+if is_dry_run:
+    puts(mail_message_html)
+    puts("Dry run: e-mail not sent")
+else:
+    try:
+        conn = SMTP(smtp_server)
+        conn.set_debuglevel(is_debug)
+        conn.login(smtp_user, smtp_pass)
+        # conn.sendmail(arg_from, mail_to, msg.as_string())
+        conn.send_message(msg)
+        conn.quit()
+    except TimeoutError:
+        puts("Error: connection timed out")
+        sys.exit(1)
+    except socks.ProxyConnectionError:
+        puts("Error: connection timed out to proxy {}:{}".format(proxy_server, proxy_port))
+        sys.exit(1)
+    except socks.GeneralProxyError:
+        puts("Error: could not connect to proxy {}:{}".format(proxy_server, proxy_port))
+        sys.exit(1)
+    puts("e-mail sent")

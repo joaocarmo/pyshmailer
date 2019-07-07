@@ -1,0 +1,3 @@
+PyYAML==5.1
+SocksiPy_branch==1.01
+beautifulsoup4==4.7.1
