@@ -298,12 +298,12 @@ else:
         conn.send_message(msg)
         conn.quit()
     except TimeoutError:
-        puts("Error: connection timed out")
+        sys.stderr.write("Error: connection timed out")
         sys.exit(1)
     except socks.ProxyConnectionError:
-        puts("Error: connection timed out to proxy {}:{}".format(proxy_server, proxy_port))
+        sys.stderr.write("Error: connection timed out to proxy {}:{}".format(proxy_server, proxy_port))
         sys.exit(1)
     except socks.GeneralProxyError:
-        puts("Error: could not connect to proxy {}:{}".format(proxy_server, proxy_port))
+        sys.stderr.write("Error: could not connect to proxy {}:{}".format(proxy_server, proxy_port))
         sys.exit(1)
     puts("e-mail sent")

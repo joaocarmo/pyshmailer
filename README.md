@@ -1,6 +1,7 @@
 # PyShMailer
 
-A simple CLI tool to send emails using Python.
+A simple CLI tool to send emails using Python 3, because the End of Life (EOL)
+for Python 2.7 is coming January 1, 2020.
 
 ## Install
 
