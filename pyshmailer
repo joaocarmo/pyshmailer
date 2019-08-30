@@ -23,7 +23,7 @@ parser = argparse.ArgumentParser(
 parser.add_argument(
     "--version",
     action="version",
-    version="%(prog)s 1.0.1",
+    version="%(prog)s 1.0.2",
 )
 parser.add_argument(
     "-to",
@@ -308,5 +308,10 @@ else:
         sys.exit(1)
     except socks.GeneralProxyError:
         sys.stderr.write("Error: could not connect to proxy {}:{}\n".format(proxy_server, proxy_port))
+        sys.exit(1)
+    except SMTPResponseException as error:
+        error_code = error.smtp_code
+        error_message = error.smtp_error
+        sys.stderr.write("Error: smtp error {} - {}\n".format(error_code, error_message))
         sys.exit(1)
     puts("e-mail sent")

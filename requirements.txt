@@ -1,3 +1,4 @@
 PyYAML==5.1
 PySocks==1.7.0
 beautifulsoup4==4.7.1
+html5lib==1.0.1
