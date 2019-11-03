@@ -29,20 +29,28 @@ parser.add_argument(
     "-to",
     "--mail-to",
     nargs="?",
-    help="a list of e-mail addresses to send the message to 'email1,email2,...'",
+    help=(
+        "a list of e-mail addresses to send the message to 'email1,email2,...'"
+    ),
     required=True,
 )
 parser.add_argument(
     "-cc",
     "--cc-to",
     nargs="?",
-    help="a list of e-mail addresses to send the message as cc to 'email1,email2,...'",
+    help=(
+        "a list of e-mail addresses to send the message "
+        "as cc to 'email1,email2,...'"
+    ),
 )
 parser.add_argument(
     "-bcc",
     "--bcc-to",
     nargs="?",
-    help="a list of e-mail addresses to send the message as bcc to 'email1,email2,...'",
+    help=(
+        "a list of e-mail addresses to send the message "
+        "as bcc to 'email1,email2,...'"
+    ),
 )
 parser.add_argument(
     "-from",
@@ -92,6 +100,12 @@ parser.add_argument(
     default="socks5",
 )
 parser.add_argument(
+    "-t",
+    "--tor",
+    action="store_true",
+    help="use the Tor network through localhost:9050 (socks5)",
+)
+parser.add_argument(
     "-v",
     "--verbose",
     action="store_true",
@@ -125,6 +139,7 @@ arg_images = args.with_images
 arg_config = args.config
 arg_proxy = args.proxy
 arg_proxy_type = args.proxy_type
+use_tor = args.tor
 is_verbose = args.verbose
 is_dry_run = args.dry_run
 is_debug = args.debug
@@ -140,24 +155,28 @@ mail_to_cc = ''
 mail_to_bcc = ''
 cnt_src = ''
 
-# Custom print function
+
 def puts(*args, **kwargs):
+    # Custom print function
     if is_verbose:
         print(*args, **kwargs)
 
-# Parse the configuration file
+
 try:
+    # Parse the configuration file
     config = yaml.safe_load(arg_config.read())
 except yaml.YAMLError as err:
     sys.stderr.write("Error: there was a problem parsing the config file\n")
     sys.exit(1)
 
-# Fix base 64 incorrect padding
+
 def fix_b64_padding(b64s):
+    # Fix base 64 incorrect padding
     return b64s + '=' * (-len(b64s) % 4)
 
-# Setup the mail server
+
 smtp_server_b64 = config.get('smtp_server', {}).get('base64')
+# Setup the mail server
 if not smtp_server_b64:
     smtp_server = config.get('smtp_server', {}).get('plain')
 else:
@@ -201,7 +220,9 @@ if proxy_server and proxy_port and arg_proxy_type:
         sys.stderr.write('Error: proxy port is invalid\n')
         sys.exit(1)
     except socket.error:
-        sys.stderr.write("Error: the proxy '{}' is invalid\n".format(proxy_server))
+        sys.stderr.write(
+            "Error: the proxy '{}' is invalid\n".format(proxy_server)
+        )
         sys.exit(1)
     throughProxy = True
 
@@ -213,11 +234,11 @@ elif arg_proxy_type == 'http':
 
 # Create an array of destinations
 if arg_to:
-    mail_to = ', '.join([ to for to in arg_to.split(',') ])
+    mail_to = ', '.join([to for to in arg_to.split(',')])
 if arg_cc:
-    mail_to_cc = ', '.join([ to for to in arg_cc.split(',') ])
+    mail_to_cc = ', '.join([to for to in arg_cc.split(',')])
 if arg_bcc:
-    mail_to_bcc = ', '.join([ to for to in arg_bcc.split(',') ])
+    mail_to_bcc = ', '.join([to for to in arg_bcc.split(',')])
 
 # Parse the e-mail message
 mail_message_text = ''
@@ -240,6 +261,15 @@ if not mail_message_html:
     </body>
 </html>
 '''.format(mail_message_text)
+
+# Setup for use with Tor
+if use_tor:
+    puts('Using the Tor network as proxy')
+    proxy_user = 'onionking'
+    proxy_server = 'localhost'
+    proxy_port = 9050
+    proxy_type = socks.SOCKS5
+    throughProxy = True
 
 # Wrap the smtplib module
 if throughProxy:
@@ -304,14 +334,24 @@ else:
         sys.stderr.write("Error: connection timed out\n")
         sys.exit(1)
     except socks.ProxyConnectionError:
-        sys.stderr.write("Error: connection timed out to proxy {}:{}\n".format(proxy_server, proxy_port))
+        sys.stderr.write(
+            "Error: connection timed out to proxy {}:{}\n".format(
+                proxy_server, proxy_port,
+            )
+        )
         sys.exit(1)
     except socks.GeneralProxyError:
-        sys.stderr.write("Error: could not connect to proxy {}:{}\n".format(proxy_server, proxy_port))
+        sys.stderr.write(
+            "Error: could not connect to proxy {}:{}\n".format(
+                proxy_server, proxy_port,
+            )
+        )
         sys.exit(1)
     except SMTPResponseException as error:
         error_code = error.smtp_code
         error_message = error.smtp_error
-        sys.stderr.write("Error: smtp error {} - {}\n".format(error_code, error_message))
+        sys.stderr.write(
+            "Error: smtp error {} - {}\n".format(error_code, error_message)
+        )
         sys.exit(1)
     puts("e-mail sent")
